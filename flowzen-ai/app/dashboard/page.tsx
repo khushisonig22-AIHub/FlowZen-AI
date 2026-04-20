@@ -296,10 +296,10 @@ export default function Dashboard() {
 
           <div className="flex flex-1 items-center justify-end gap-3 sm:gap-4">
             {/* Notification Bell */}
-            <div className="relative">
+            <div className="relative z-40">
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
-                className="group relative inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-800/90 px-4 py-2 text-sm font-medium text-slate-100 shadow-sm transition hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                className="group relative inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-800/90 px-4 py-2 text-sm font-medium text-slate-100 shadow-sm transition hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 cursor-pointer pointer-events-auto"
                 aria-label="View notifications"
               >
                 <Bell className="h-5 w-5 text-slate-200" aria-hidden="true" />
@@ -318,7 +318,7 @@ export default function Dashboard() {
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    className="absolute right-0 mt-2 w-80 rounded-2xl border border-slate-700 bg-slate-900 shadow-xl max-h-96 overflow-y-auto"
+                    className="absolute right-0 mt-2 w-80 rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl max-h-96 overflow-y-auto z-50 pointer-events-auto"
                   >
                     {notifications.length === 0 ? (
                       <div className="p-4 text-center text-slate-400">No notifications</div>
@@ -326,17 +326,20 @@ export default function Dashboard() {
                       notifications.map((notif) => (
                         <div
                           key={notif.id}
-                          className={`border-b border-slate-800 p-4 hover:bg-slate-800/50 transition ${
+                          className={`border-b border-slate-800 p-4 hover:bg-slate-800/50 transition cursor-pointer ${
                             notif.read ? "opacity-60" : ""
                           }`}
                         >
-                          <div className="flex justify-between items-start">
-                            <p className="text-sm text-slate-200">{notif.message}</p>
+                          <div className="flex justify-between items-start gap-2">
+                            <p className="text-sm text-slate-200 flex-1">{notif.message}</p>
                             <button
-                              onClick={() => markNotificationAsRead(notif.id)}
-                              className="text-xs text-slate-400 hover:text-slate-200"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                markNotificationAsRead(notif.id)
+                              }}
+                              className="text-xs text-slate-400 hover:text-slate-200 cursor-pointer pointer-events-auto whitespace-nowrap"
                             >
-                              Mark read
+                              ✓
                             </button>
                           </div>
                           <p className="mt-1 text-xs text-slate-500">
@@ -354,7 +357,7 @@ export default function Dashboard() {
               <p className="text-sm text-slate-400">Welcome back,</p>
               <p className="text-base font-semibold text-white">{user.name}</p>
             </div>
-            <Button variant="outline" onClick={handleLogout} aria-label="Log out">
+            <Button variant="outline" onClick={handleLogout} aria-label="Log out" className="cursor-pointer pointer-events-auto">
               Logout
             </Button>
           </div>
@@ -541,7 +544,7 @@ export default function Dashboard() {
               </p>
               <div className="mt-6 flex justify-center">
                 <Link href="/book" aria-label="Create first booking">
-                  <Button>Book your first event</Button>
+                  <Button className="cursor-pointer pointer-events-auto">Book your first event</Button>
                 </Link>
               </div>
             </div>
@@ -577,6 +580,17 @@ export default function Dashboard() {
                             </p>
                           </div>
                         </div>
+
+                        {/* Weather Info for this Booking */}
+                        {weather && (
+                          <div className="rounded-xl bg-gradient-to-r from-sky-900/30 to-slate-900/30 border border-sky-500/30 p-3 flex items-center gap-3">
+                            <span className="text-2xl">{weather.icon}</span>
+                            <div className="flex-1">
+                              <p className="text-sm font-semibold text-sky-100">{weather.condition} · {weather.temp}°C</p>
+                              <p className="text-xs text-sky-200/80">{weather.recommendation}</p>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Smart Exit Gate Panel */}
                         <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-950/50 p-4">
@@ -655,7 +669,7 @@ export default function Dashboard() {
                             setSelectedQRBooking(booking)
                             setShowQRModal(true)
                           }}
-                          className="w-full bg-gradient-to-r from-sky-500 to-indigo-600"
+                          className="w-full bg-gradient-to-r from-sky-500 to-indigo-600 cursor-pointer pointer-events-auto"
                         >
                           <Eye className="h-4 w-4 mr-2" />
                           View QR Ticket
@@ -664,7 +678,7 @@ export default function Dashboard() {
                         <Button
                           onClick={() => handleAddToCalendar(booking)}
                           variant="outline"
-                          className="w-full"
+                          className="w-full cursor-pointer pointer-events-auto"
                         >
                           <CalendarDays className="h-4 w-4 mr-2" />
                           Add to Calendar
@@ -676,7 +690,7 @@ export default function Dashboard() {
                             window.open(mapsUrl, "_blank")
                           }}
                           variant="outline"
-                          className="w-full"
+                          className="w-full cursor-pointer pointer-events-auto"
                         >
                           <Navigation className="h-4 w-4 mr-2" />
                           Get Directions
@@ -686,13 +700,13 @@ export default function Dashboard() {
                           variant={booking.status === "cancelled" ? "outline" : "destructive"}
                           onClick={() => handleCancelBooking(booking.id)}
                           disabled={booking.status === "cancelled"}
-                          className="w-full"
+                          className="w-full cursor-pointer pointer-events-auto"
                         >
                           {booking.status === "cancelled" ? "Cancelled" : "Cancel Booking"}
                         </Button>
 
                         <Link href={`/ticket/${booking.id}`} className="w-full">
-                          <Button variant="secondary" className="w-full">
+                          <Button variant="secondary" className="w-full cursor-pointer pointer-events-auto">
                             View Details
                           </Button>
                         </Link>
@@ -726,7 +740,7 @@ export default function Dashboard() {
                 <h2 className="text-2xl font-bold text-white">Your Ticket</h2>
                 <button
                   onClick={() => setShowQRModal(false)}
-                  className="text-slate-400 hover:text-white transition"
+                  className="text-slate-400 hover:text-white transition cursor-pointer pointer-events-auto"
                 >
                   <X className="h-6 w-6" />
                 </button>
@@ -761,7 +775,7 @@ export default function Dashboard() {
                     link.click()
                   }
                 }}
-                className="w-full"
+                className="w-full cursor-pointer pointer-events-auto"
               >
                 <Download className="h-4 w-4 mr-2" />
                 Download Ticket
@@ -775,14 +789,14 @@ export default function Dashboard() {
       <AnimatePresence>
         {alertVisible && alertBooking && (
           <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+            className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 p-4 pointer-events-auto"
             onClick={() => setAlertVisible(false)}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="w-full max-w-sm rounded-3xl border-2 border-red-500 bg-gradient-to-b from-red-950 to-slate-900 p-8 shadow-2xl"
+              className="w-full max-w-sm rounded-3xl border-2 border-red-500 bg-gradient-to-b from-red-950 to-slate-900 p-8 shadow-2xl relative z-50"
               onClick={(e) => e.stopPropagation()}
               initial={{ scale: 0.9 }}
               animate={{ scale: 1 }}
@@ -798,8 +812,12 @@ export default function Dashboard() {
                 {alertBooking.crowdPercentage}%
               </p>
               <Button
-                onClick={() => setAlertVisible(false)}
-                className="w-full bg-gradient-to-r from-red-600 to-rose-600"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setAlertVisible(false)
+                }}
+                className="w-full bg-gradient-to-r from-red-600 to-rose-600 cursor-pointer pointer-events-auto z-9999 relative"
+                style={{ zIndex: 9999 }}
               >
                 I Understand
               </Button>
