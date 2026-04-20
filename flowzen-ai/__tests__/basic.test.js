@@ -84,10 +84,10 @@ describe('Dashboard Component', () => {
     render(<Dashboard />)
 
     await waitFor(() => {
-      expect(screen.getByText('No bookings yet')).toBeInTheDocument()
+      expect(screen.getByText('No bookings found')).toBeInTheDocument()
     })
 
-    const logoutButton = screen.getByRole('button', { name: /logout/i })
+    const logoutButton = screen.getByText('Logout')
     fireEvent.click(logoutButton)
 
     expect(mockLocalStorage.removeItem).toHaveBeenCalledWith('flowzen_current_user')

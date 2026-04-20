@@ -24,6 +24,8 @@ import {
   Sparkles,
   Ticket,
   Users,
+  LogOut,
+  X,
 } from "lucide-react"
 
 interface Booking {
