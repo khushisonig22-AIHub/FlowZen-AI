@@ -786,45 +786,34 @@ export default function Dashboard() {
       </AnimatePresence>
 
       {/* Crowd Alert Popup */}
-      <AnimatePresence>
-        {alertVisible && alertBooking && (
-          <motion.div
-            className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 p-4 pointer-events-auto"
-            onClick={() => setAlertVisible(false)}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <motion.div
-              className="w-full max-w-sm rounded-3xl border-2 border-red-500 bg-gradient-to-b from-red-950 to-slate-900 p-8 shadow-2xl relative z-50"
-              onClick={(e) => e.stopPropagation()}
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
+      {alertVisible && alertBooking && (
+        <div 
+          style={{position:'fixed', top:0, left:0, width:'100%', 
+          height:'100%', backgroundColor:'rgba(0,0,0,0.7)', 
+          zIndex:99999, display:'flex', alignItems:'center', 
+          justifyContent:'center'}}
+        >
+          <div style={{background:'linear-gradient(135deg,#1a0000,#3d0000)', 
+          border:'2px solid #ff0000', borderRadius:'16px', 
+          padding:'40px', textAlign:'center', maxWidth:'400px'}}>
+            <div style={{fontSize:'48px'}}>⚠️</div>
+            <h2 style={{color:'#ff4444', fontSize:'24px', 
+            fontWeight:'bold'}}>HIGH CROWD ALERT</h2>
+            <p style={{color:'white'}}>{alertBooking.eventName} is approaching capacity</p>
+            <p style={{color:'#ff4444', fontSize:'32px', 
+            fontWeight:'bold'}}>{alertBooking.crowdPercentage}%</p>
+            <button 
+              onClick={() => setAlertVisible(false)}
+              style={{background:'#ff0000', color:'white', 
+              border:'none', padding:'12px 40px', borderRadius:'8px', 
+              fontSize:'16px', cursor:'pointer', marginTop:'16px',
+              zIndex:999999, position:'relative'}}
             >
-              <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 1, repeat: Infinity }}>
-                <AlertTriangle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-              </motion.div>
-              <h2 className="text-2xl font-bold text-red-300 text-center mb-2">HIGH CROWD ALERT</h2>
-              <p className="text-slate-300 text-center mb-4">
-                {alertBooking.eventName} is approaching capacity
-              </p>
-              <p className="text-3xl font-bold text-red-400 text-center mb-6">
-                {alertBooking.crowdPercentage}%
-              </p>
-              <Button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setAlertVisible(false)
-                }}
-                className="w-full bg-gradient-to-r from-red-600 to-rose-600 cursor-pointer pointer-events-auto z-9999 relative"
-                style={{ zIndex: 9999 }}
-              >
-                I Understand
-              </Button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              I Understand
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
