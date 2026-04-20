@@ -1,15 +1,15 @@
-﻿"use client"
+"use client"
 
 import { useState, useEffect, useMemo, useRef } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { QRCodeCanvas } from "qrcode.react"
 import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
@@ -20,13 +20,18 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock,
+  Download,
+  Eye,
+  LogOut,
   MapPin,
+  Navigation,
   Sparkles,
   Ticket,
   Users,
-  LogOut,
   X,
 } from "lucide-react"
+import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
+import { getWeather, getWeatherBasedRecommendation } from "@/lib/weather"
 
 interface Booking {
   id: string
@@ -34,6 +39,7 @@ interface Booking {
   eventName: string
   date: string
   time: string
+  venue?: string
   gate?: string
   entryGate?: string
   entryGateName?: string
@@ -44,9 +50,27 @@ interface Booking {
   crowdPercentage?: number
 }
 
+interface Notification {
+  id: string
+  type: "alert" | "booking" | "weather"
+  message: string
+  timestamp: number
+  read: boolean
+  bookingId?: string
+}
+
 const getCrowdPercent = (id: string) => {
   const base = Array.from(id).reduce((sum, char) => sum + char.charCodeAt(0), 0)
   return Math.min(98, Math.max(32, (base % 71) + 30))
+}
+
+const generateGateData = (seed: number) => {
+  return [
+    { name: "Gate A", crowd: Math.max(20, (seed + 10) % 70) },
+    { name: "Gate B", crowd: Math.max(75, (seed + 45) % 90) },
+    { name: "Gate C", crowd: Math.max(30, (seed + 25) % 60) },
+    { name: "Gate D", crowd: Math.max(80, (seed + 55) % 95) },
+  ]
 }
 
 const capacityLabel = (percent: number) => {
@@ -77,12 +101,18 @@ const getStatusColor = (status: string) => {
 export default function Dashboard() {
   const [user, setUser] = useState<any>(null)
   const [bookings, setBookings] = useState<Booking[]>([])
+  const [weather, setWeather] = useState<any>(null)
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [showNotifications, setShowNotifications] = useState(false)
   const [alertVisible, setAlertVisible] = useState(false)
   const [alertBooking, setAlertBooking] = useState<Booking | null>(null)
+  const [selectedQRBooking, setSelectedQRBooking] = useState<Booking | null>(null)
+  const [showQRModal, setShowQRModal] = useState(false)
   const router = useRouter()
 
   const initializedRef = useRef(false)
 
+  // Load data on mount
   useEffect(() => {
     if (initializedRef.current) return
 
@@ -108,37 +138,59 @@ export default function Dashboard() {
 
     setBookings(userBookings)
     initializedRef.current = true
-  }, []) // Empty dependency array to run only once // Only depend on router to avoid infinite loops
 
+    // Load weather
+    loadWeather()
+  }, [router])
+
+  // Load weather data
+  const loadWeather = async () => {
+    const weatherData = await getWeather("Delhi")
+    setWeather(weatherData)
+  }
+
+  // Monitor crowd alerts
   useEffect(() => {
     const highAlert = bookings.find(
       (booking) => booking.crowdPercentage && booking.crowdPercentage >= 80 && booking.status === "confirmed"
     )
-    if (highAlert) {
+    if (highAlert && !alertVisible) {
       setAlertBooking(highAlert)
       setAlertVisible(true)
+      addNotification({
+        type: "alert",
+        message: `⚠️ HIGH CROWD at ${highAlert.eventName}`,
+        bookingId: highAlert.id,
+      })
+      // Track event in Google Analytics
+      if (typeof window !== "undefined" && (window as any).gtag) {
+        (window as any).gtag("event", "crowd_alert_shown", {
+          event_name: highAlert.eventName,
+          crowd_level: highAlert.crowdPercentage,
+        })
+      }
     }
-  }, [bookings])
+  }, [bookings, alertVisible])
 
-  const alertCount = useMemo(
-    () => bookings.filter((booking) => booking.crowdPercentage && booking.crowdPercentage >= 80 && booking.status === "confirmed").length,
-    [bookings]
-  )
+  const addNotification = (notification: Omit<Notification, "id" | "timestamp" | "read">) => {
+    const newNotif: Notification = {
+      ...notification,
+      id: Math.random().toString(36),
+      timestamp: Date.now(),
+      read: false,
+    }
+    setNotifications((prev) => [newNotif, ...prev])
+  }
 
-  const stats = useMemo(
-    () => ({
-      total: bookings.length,
-      active: bookings.filter((booking) => booking.status === "confirmed").length,
-      upcoming: bookings.filter((booking) => booking.status !== "cancelled").length,
-    }),
-    [bookings]
-  )
+  const markNotificationAsRead = (id: string) => {
+    setNotifications((prev) =>
+      prev.map((notif) => (notif.id === id ? { ...notif, read: true } : notif))
+    )
+  }
 
   const handleCancelBooking = (id: string) => {
     const confirmed = window.confirm("Are you sure you want to cancel this booking?")
-    if (!confirmed) {
-      return
-    }
+    if (!confirmed) return
 
     const updatedBookings = bookings.map((booking) =>
       booking.id === id ? { ...booking, status: "cancelled" as const } : booking
@@ -152,6 +204,40 @@ export default function Dashboard() {
       booking.id === id ? { ...booking, status: "cancelled" } : booking
     )
     localStorage.setItem("flowzen_bookings", JSON.stringify(persistedBookings))
+
+    // Track event in Google Analytics
+    if (typeof window !== "undefined" && (window as any).gtag) {
+      (window as any).gtag("event", "booking_cancelled", {
+        booking_id: id,
+      })
+    }
+
+    addNotification({
+      type: "booking",
+      message: "✅ Booking cancelled successfully",
+      bookingId: id,
+    })
+  }
+
+  const handleAddToCalendar = (booking: Booking) => {
+    const startDate = new Date(`${booking.date}T${booking.time}`)
+    const endDate = new Date(startDate.getTime() + 3 * 60 * 60 * 1000) // 3 hours
+
+    const calendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
+      booking.eventName
+    )}&dates=${startDate.toISOString().split(".")[0]}Z/${endDate
+      .toISOString()
+      .split(".")[0]}Z&details=${encodeURIComponent(
+      `Gate: ${booking.entryGateName || booking.gate || "TBD"}`
+    )}&location=${encodeURIComponent(booking.venue || "Venue")}`
+
+    window.open(calendarUrl, "_blank")
+
+    addNotification({
+      type: "booking",
+      message: "📅 Added to Google Calendar",
+      bookingId: booking.id,
+    })
   }
 
   const handleLogout = () => {
@@ -159,35 +245,111 @@ export default function Dashboard() {
     router.push("/")
   }
 
+  const alertCount = useMemo(
+    () =>
+      bookings.filter(
+        (booking) =>
+          booking.crowdPercentage && booking.crowdPercentage >= 80 && booking.status === "confirmed"
+      ).length,
+    [bookings]
+  )
+
+  const unreadNotifications = useMemo(
+    () => notifications.filter((n) => !n.read).length,
+    [notifications]
+  )
+
+  const stats = useMemo(
+    () => ({
+      total: bookings.length,
+      active: bookings.filter((booking) => booking.status === "confirmed").length,
+      upcoming: bookings.filter((booking) => booking.status !== "cancelled").length,
+    }),
+    [bookings]
+  )
+
+  const chartData = useMemo(() => {
+    return bookings.map((booking, index) => ({
+      name: booking.eventName.substring(0, 10),
+      crowd: booking.crowdPercentage || 50,
+    }))
+  }, [bookings])
+
   if (!user) return null
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <nav className="bg-slate-900/95 border-b border-slate-800 shadow-xl backdrop-blur-xl">
+      {/* Navbar */}
+      <nav className="fixed top-0 z-40 w-full bg-slate-900/95 border-b border-slate-800 shadow-xl backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-gradient-to-br from-sky-500 to-indigo-600 shadow-lg shadow-slate-950/20">
+            <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-gradient-to-br from-sky-500 to-indigo-600 shadow-lg">
               <Sparkles className="h-6 w-6 text-white" aria-hidden="true" />
             </div>
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">FlowZen AI</p>
-              <p className="text-lg font-semibold text-white">Smart crowd command center</p>
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">
+                FlowZen AI
+              </p>
+              <p className="text-lg font-semibold text-white">Smart crowd command</p>
             </div>
           </div>
+
           <div className="flex flex-1 items-center justify-end gap-3 sm:gap-4">
-            <button
-              type="button"
-              className="group relative inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-800/90 px-4 py-2 text-sm font-medium text-slate-100 shadow-sm transition hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-              aria-label="View notifications"
-            >
-              <Bell className="h-5 w-5 text-slate-200" aria-hidden="true" />
-              Notifications
-              {alertCount > 0 && (
-                <span className="absolute -right-2 -top-2 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-rose-500 px-2 text-xs font-semibold text-white">
-                  {alertCount}
-                </span>
-              )}
-            </button>
+            {/* Notification Bell */}
+            <div className="relative">
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="group relative inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-800/90 px-4 py-2 text-sm font-medium text-slate-100 shadow-sm transition hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                aria-label="View notifications"
+              >
+                <Bell className="h-5 w-5 text-slate-200" aria-hidden="true" />
+                Notifications
+                {unreadNotifications > 0 && (
+                  <span className="absolute -right-2 -top-2 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-rose-500 px-2 text-xs font-semibold text-white animate-pulse">
+                    {unreadNotifications}
+                  </span>
+                )}
+              </button>
+
+              {/* Notification Dropdown */}
+              <AnimatePresence>
+                {showNotifications && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="absolute right-0 mt-2 w-80 rounded-2xl border border-slate-700 bg-slate-900 shadow-xl max-h-96 overflow-y-auto"
+                  >
+                    {notifications.length === 0 ? (
+                      <div className="p-4 text-center text-slate-400">No notifications</div>
+                    ) : (
+                      notifications.map((notif) => (
+                        <div
+                          key={notif.id}
+                          className={`border-b border-slate-800 p-4 hover:bg-slate-800/50 transition ${
+                            notif.read ? "opacity-60" : ""
+                          }`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <p className="text-sm text-slate-200">{notif.message}</p>
+                            <button
+                              onClick={() => markNotificationAsRead(notif.id)}
+                              className="text-xs text-slate-400 hover:text-slate-200"
+                            >
+                              Mark read
+                            </button>
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {new Date(notif.timestamp).toLocaleTimeString()}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
             <div className="text-right">
               <p className="text-sm text-slate-400">Welcome back,</p>
               <p className="text-base font-semibold text-white">{user.name}</p>
@@ -199,30 +361,59 @@ export default function Dashboard() {
         </div>
       </nav>
 
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <section className="mb-10 rounded-3xl border border-slate-800 bg-slate-900/95 p-8 shadow-2xl shadow-slate-950/40">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-sm uppercase tracking-[0.3em] text-sky-400">Smart event intelligence</p>
-              <h1 className="mt-4 text-4xl font-semibold text-white sm:text-5xl">AI-powered crowd alerts and booking control</h1>
-              <p className="mt-4 max-w-2xl text-slate-300">Monitor capacity with confidence, manage bookings instantly, and keep guests safe across every event.</p>
+      <main className="mx-auto max-w-7xl px-4 py-24 sm:px-6 lg:px-8">
+        {/* Emergency Banner */}
+        {alertCount > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8 rounded-2xl border-2 border-red-500 bg-gradient-to-r from-red-900/20 to-rose-900/20 p-4 backdrop-blur"
+          >
+            <div className="flex items-center gap-3">
+              <motion.div
+                animate={{ scale: [1, 1.2, 1] }}
+                transition={{ duration: 1, repeat: Infinity }}
+                className="h-8 w-8 rounded-full bg-red-500 flex items-center justify-center"
+              >
+                <AlertTriangle className="h-5 w-5 text-white" />
+              </motion.div>
+              <div>
+                <p className="font-semibold text-red-300">⚠️ HIGH CROWD ALERT</p>
+                <p className="text-sm text-red-200">
+                  {alertCount} location{alertCount > 1 ? "s" : ""} exceeding safe capacity. Consider using Gate A or C.
+                </p>
+              </div>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:w-[26rem]">
-              <Link href="/book" aria-label="Book a new ticket">
-                <Button className="w-full">Book Ticket</Button>
-              </Link>
-              <Link href="/" aria-label="Open event overview">
-                <Button variant="secondary" className="w-full">Venue overview</Button>
-              </Link>
-            </div>
-          </div>
-        </section>
+          </motion.div>
+        )}
 
-        <section aria-labelledby="dashboard-stats" className="grid gap-6 lg:grid-cols-3">
+        {/* Weather Widget */}
+        {weather && (
+          <Card className="mb-8 bg-gradient-to-br from-slate-900 to-slate-800 border-slate-700">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-3">
+                <span className="text-3xl">{weather.icon}</span>
+                <div>
+                  <p>{weather.condition}</p>
+                  <p className="text-2xl font-bold">{weather.temp}°C</p>
+                </div>
+              </CardTitle>
+              <CardDescription>{weather.description}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-slate-300">{weather.recommendation}</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Stat Cards */}
+        <section aria-labelledby="dashboard-stats" className="grid gap-6 lg:grid-cols-3 mb-10">
           <Card className="overflow-hidden rounded-3xl bg-gradient-to-br from-sky-600 via-blue-600 to-indigo-700 text-white shadow-2xl">
             <CardHeader className="space-y-2">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-100">Total Bookings</p>
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-100">
+                  Total Bookings
+                </p>
                 <Ticket className="h-5 w-5 text-sky-100/90" aria-hidden="true" />
               </div>
               <CardTitle className="text-4xl font-semibold">{stats.total}</CardTitle>
@@ -235,7 +426,9 @@ export default function Dashboard() {
           <Card className="overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-600 via-emerald-500 to-teal-600 text-white shadow-2xl">
             <CardHeader className="space-y-2">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-100">Active Tickets</p>
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-100">
+                  Active Tickets
+                </p>
                 <Users className="h-5 w-5 text-emerald-100/90" aria-hidden="true" />
               </div>
               <CardTitle className="text-4xl font-semibold">{stats.active}</CardTitle>
@@ -248,7 +441,9 @@ export default function Dashboard() {
           <Card className="overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-fuchsia-600 to-pink-600 text-white shadow-2xl">
             <CardHeader className="space-y-2">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-100">Upcoming Events</p>
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-100">
+                  Upcoming Events
+                </p>
                 <CalendarDays className="h-5 w-5 text-violet-100/90" aria-hidden="true" />
               </div>
               <CardTitle className="text-4xl font-semibold">{stats.upcoming}</CardTitle>
@@ -259,11 +454,77 @@ export default function Dashboard() {
           </Card>
         </section>
 
+        {/* Analytics Charts */}
+        {chartData.length > 0 && (
+          <section className="mb-10 grid gap-6 lg:grid-cols-2">
+            <Card className="bg-slate-900/90 border-slate-800">
+              <CardHeader>
+                <CardTitle>Crowd Distribution</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                    <XAxis dataKey="name" stroke="#94a3b8" />
+                    <YAxis stroke="#94a3b8" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #475569" }}
+                      cursor={{ fill: "rgba(100, 100, 100, 0.1)" }}
+                    />
+                    <Bar dataKey="crowd" fill="#0ea5e9" radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-slate-900/90 border-slate-800">
+              <CardHeader>
+                <CardTitle>Booking Status</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: "Confirmed", value: stats.active },
+                        {
+                          name: "Cancelled",
+                          value: bookings.filter((b) => b.status === "cancelled").length,
+                        },
+                        { name: "Used", value: bookings.filter((b) => b.status === "used").length },
+                      ]}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, value }) => `${name}: ${value}`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      <Cell fill="#10b981" />
+                      <Cell fill="#ef4444" />
+                      <Cell fill="#3b82f6" />
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #475569" }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </section>
+        )}
+
+        {/* Live Bookings */}
         <section className="mt-10">
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 id="dashboard-stats" className="text-2xl font-semibold text-white">Live bookings</h2>
-              <p className="mt-2 text-slate-400">Manage bookings, monitor crowd levels, and adjust access in real time.</p>
+              <h2 id="dashboard-stats" className="text-2xl font-semibold text-white">
+                Live bookings
+              </h2>
+              <p className="mt-2 text-slate-400">
+                Manage bookings, monitor crowd levels, and adjust access in real time.
+              </p>
             </div>
             <div className="flex flex-wrap gap-3">
               <Badge className="bg-slate-800 text-slate-200">Alerts: {alertCount}</Badge>
@@ -275,7 +536,9 @@ export default function Dashboard() {
             <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-8 text-center shadow-2xl">
               <Ticket className="mx-auto mb-4 h-14 w-14 text-slate-500" aria-hidden="true" />
               <p className="text-xl font-semibold text-white">No bookings found</p>
-              <p className="mt-2 text-slate-400">Create your first booking to enable crowd monitoring and smart alerts.</p>
+              <p className="mt-2 text-slate-400">
+                Create your first booking to enable crowd monitoring and smart alerts.
+              </p>
               <div className="mt-6 flex justify-center">
                 <Link href="/book" aria-label="Create first booking">
                   <Button>Book your first event</Button>
@@ -286,84 +549,153 @@ export default function Dashboard() {
             <div className="space-y-6">
               {bookings.map((booking) => {
                 const crowd = booking.crowdPercentage ?? 45
+                const gates = generateGateData(crowd)
+                const bestGate = gates.reduce((best, gate) =>
+                  gate.crowd < best.crowd ? gate : best
+                )
+                const recommendation = getWeatherBasedRecommendation(weather, crowd, gates)
+
                 return (
                   <motion.div
                     key={booking.id}
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="rounded-[2rem] border border-slate-800 bg-slate-900/90 p-6 shadow-2xl"
+                    className={`rounded-[2rem] border bg-slate-900/90 p-6 shadow-2xl ${
+                      crowd >= 80 ? "border-red-500/50 bg-red-950/10" : "border-slate-800"
+                    }`}
                   >
                     <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="space-y-4">
+                      <div className="flex-1 space-y-4">
                         <div className="flex items-center gap-4">
                           <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-slate-800 text-sky-300">
                             <Ticket className="h-6 w-6" aria-hidden="true" />
                           </div>
                           <div>
                             <h3 className="text-2xl font-semibold text-white">{booking.eventName}</h3>
-                            <p className="mt-1 text-sm text-slate-400">{booking.date} · {booking.time}</p>
+                            <p className="mt-1 text-sm text-slate-400">
+                              {booking.date} · {booking.time}
+                            </p>
                           </div>
                         </div>
 
-                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                          <div className="rounded-3xl bg-slate-950/80 p-4 text-sm text-slate-300">
-                            <p className="font-medium text-slate-100">Entry</p>
-                            <p className="mt-2">{booking.entryGateName || booking.gate || "TBD"}</p>
+                        {/* Smart Exit Gate Panel */}
+                        <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-950/50 p-4">
+                          <p className="mb-3 font-semibold text-slate-200">Smart Exit Gates</p>
+                          <div className="grid gap-2">
+                            {gates.map((gate) => (
+                              <div
+                                key={gate.name}
+                                className={`flex items-center justify-between rounded-xl p-3 transition ${
+                                  gate.crowd >= 80
+                                    ? "bg-red-950/50 border border-red-500/30"
+                                    : "bg-slate-900/50 border border-slate-700"
+                                }`}
+                              >
+                                <span className="font-medium text-slate-200">{gate.name}</span>
+                                <div className="flex items-center gap-2">
+                                  <div className="h-2 w-24 bg-slate-700 rounded-full overflow-hidden">
+                                    <motion.div
+                                      className={`h-full ${
+                                        gate.crowd >= 80
+                                          ? "bg-red-500"
+                                          : gate.crowd >= 50
+                                          ? "bg-yellow-400"
+                                          : "bg-emerald-500"
+                                      }`}
+                                      initial={{ width: 0 }}
+                                      animate={{ width: `${gate.crowd}%` }}
+                                      transition={{ duration: 0.5 }}
+                                    />
+                                  </div>
+                                  <span className="text-sm text-slate-300 w-10 text-right">
+                                    {gate.crowd}%
+                                  </span>
+                                  {gate.crowd >= 80 && (
+                                    <motion.div
+                                      animate={{ scale: [1, 1.2, 1] }}
+                                      transition={{ duration: 0.5, repeat: Infinity }}
+                                      className="text-red-500 text-lg"
+                                    >
+                                      ⚠️
+                                    </motion.div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                          <div className="rounded-3xl bg-slate-950/80 p-4 text-sm text-slate-300">
-                            <p className="font-medium text-slate-100">Exit</p>
-                            <p className="mt-2">{booking.exitGateName || "N/A"}</p>
+
+                          {/* Weather-based Recommendation */}
+                          <div className="mt-3 rounded-lg bg-slate-800/50 p-3 border border-sky-500/30">
+                            <p className="text-sm text-sky-200 font-semibold">{recommendation}</p>
                           </div>
-                          <div className="rounded-3xl bg-slate-950/80 p-4 text-sm text-slate-300">
-                            <p className="font-medium text-slate-100">Status</p>
-                            <p className="mt-2 capitalize">{booking.status}</p>
+                        </div>
+
+                        {/* Main Crowd Display */}
+                        <div className="rounded-2xl bg-slate-950/80 p-4 text-sm text-slate-300">
+                          <div className="flex items-center justify-between text-slate-200 mb-3">
+                            <span className="font-medium">Overall Capacity</span>
+                            <span className="text-lg font-bold">{crowd}%</span>
                           </div>
-                          <div className="rounded-3xl bg-slate-950/80 p-4 text-sm text-slate-300">
-                            <p className="font-medium text-slate-100">Crowd</p>
-                            <p className="mt-2">{capacityLabel(crowd)}</p>
+                          <div className="h-4 w-full overflow-hidden rounded-full bg-slate-800">
+                            <motion.div
+                              className={`${capacityColor(crowd)} h-full rounded-full`}
+                              initial={{ width: 0 }}
+                              animate={{ width: `${crowd}%` }}
+                              transition={{ duration: 0.5 }}
+                            />
                           </div>
+                          <p className="mt-2 text-xs text-slate-400">{capacityLabel(crowd)}</p>
                         </div>
                       </div>
 
-                      <div className="flex flex-col gap-4">
-                        <div className="rounded-3xl bg-slate-950/80 p-4 text-sm text-slate-300">
-                          <div className="flex items-center justify-between text-slate-200">
-                            <span>Crowd Capacity</span>
-                            <span>{crowd}%</span>
-                          </div>
-                          <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-slate-800">
-                            <div
-                              className={`${capacityColor(crowd)} h-full rounded-full transition-all duration-500`}
-                              style={{ width: `${crowd}%` }}
-                              aria-hidden="true"
-                            />
-                          </div>
-                        </div>
+                      {/* Action Buttons */}
+                      <div className="flex flex-col gap-3 min-w-[200px]">
+                        <Button
+                          onClick={() => {
+                            setSelectedQRBooking(booking)
+                            setShowQRModal(true)
+                          }}
+                          className="w-full bg-gradient-to-r from-sky-500 to-indigo-600"
+                        >
+                          <Eye className="h-4 w-4 mr-2" />
+                          View QR Ticket
+                        </Button>
 
-                        <div className="flex flex-wrap gap-3">
-                          <Badge className={getStatusColor(booking.status)}>
-                            {booking.status}
-                          </Badge>
-                          <Badge className="bg-slate-800 text-slate-200">{capacityLabel(crowd)}</Badge>
-                        </div>
+                        <Button
+                          onClick={() => handleAddToCalendar(booking)}
+                          variant="outline"
+                          className="w-full"
+                        >
+                          <CalendarDays className="h-4 w-4 mr-2" />
+                          Add to Calendar
+                        </Button>
 
-                        <div className="flex flex-wrap gap-3">
-                          <Button
-                            variant={booking.status === "cancelled" ? "outline" : "destructive"}
-                            onClick={() => handleCancelBooking(booking.id)}
-                            disabled={booking.status === "cancelled"}
-                            aria-label={
-                              booking.status === "cancelled"
-                                ? `Booking ${booking.eventName} is already cancelled`
-                                : `Cancel booking for ${booking.eventName}`
-                            }
-                          >
-                            {booking.status === "cancelled" ? "Canceled" : "Cancel Booking"}
+                        <Button
+                          onClick={() => {
+                            const mapsUrl = `https://maps.google.com/?q=${booking.venue || "Event Venue"}`
+                            window.open(mapsUrl, "_blank")
+                          }}
+                          variant="outline"
+                          className="w-full"
+                        >
+                          <Navigation className="h-4 w-4 mr-2" />
+                          Get Directions
+                        </Button>
+
+                        <Button
+                          variant={booking.status === "cancelled" ? "outline" : "destructive"}
+                          onClick={() => handleCancelBooking(booking.id)}
+                          disabled={booking.status === "cancelled"}
+                          className="w-full"
+                        >
+                          {booking.status === "cancelled" ? "Cancelled" : "Cancel Booking"}
+                        </Button>
+
+                        <Link href={`/ticket/${booking.id}`} className="w-full">
+                          <Button variant="secondary" className="w-full">
+                            View Details
                           </Button>
-                          <Link href={`/ticket/${booking.id}`} aria-label={`View ticket for ${booking.eventName}`}>
-                            <Button variant="outline">View Ticket</Button>
-                          </Link>
-                        </div>
+                        </Link>
                       </div>
                     </div>
                   </motion.div>
@@ -374,55 +706,103 @@ export default function Dashboard() {
         </section>
       </main>
 
+      {/* QR Code Modal */}
       <AnimatePresence>
-        {alertVisible && alertBooking && (
+        {showQRModal && selectedQRBooking && (
           <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+            onClick={() => setShowQRModal(false)}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="alert-modal-title"
           >
             <motion.div
-              className="w-full max-w-2xl rounded-3xl border border-slate-800 bg-slate-950 p-8 shadow-2xl"
-              initial={{ scale: 0.96, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.96, y: 20 }}
+              className="w-full max-w-sm rounded-3xl border border-slate-700 bg-slate-900 p-8 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
             >
-              <div className="flex items-start gap-4">
-                <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-rose-500/15 text-rose-300">
-                  <AlertTriangle className="h-8 w-8" aria-hidden="true" />
-                </div>
-                <div className="space-y-2">
-                  <p id="alert-modal-title" className="text-xl font-semibold text-white">High crowd expected</p>
-                  <p className="text-slate-400">Event: {alertBooking.eventName}</p>
-                </div>
-              </div>
-              <div className="mt-6 rounded-3xl bg-slate-900 p-6 text-white">
-                <div className="flex items-center gap-3 text-lg">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-400" aria-hidden="true" />
-                  <span>{alertBooking.crowdPercentage}% capacity</span>
-                </div>
-                <p className="mt-4 text-slate-300">High crowd expected! Arrive 30 mins early.</p>
-                <p className="mt-2 text-slate-400">Suggested arrival time: 30 minutes before event start.</p>
-              </div>
-              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
-                <Button onClick={() => setAlertVisible(false)} aria-label="Acknowledge crowd alert">
-                  Got it
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setAlertVisible(false)
-                    router.push("/book")
-                  }}
-                  aria-label="Change time slot"
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-white">Your Ticket</h2>
+                <button
+                  onClick={() => setShowQRModal(false)}
+                  className="text-slate-400 hover:text-white transition"
                 >
-                  Change Time Slot
-                </Button>
+                  <X className="h-6 w-6" />
+                </button>
               </div>
+
+              <div className="bg-white p-4 rounded-2xl mb-4 flex justify-center">
+                <QRCodeCanvas
+                  value={selectedQRBooking.qrCode}
+                  size={200}
+                  level="H"
+                  includeMargin={true}
+                />
+              </div>
+
+              <div className="space-y-3 mb-6 text-center">
+                <h3 className="text-xl font-semibold text-white">{selectedQRBooking.eventName}</h3>
+                <p className="text-slate-400">
+                  {selectedQRBooking.date} at {selectedQRBooking.time}
+                </p>
+                <p className="text-slate-400">
+                  Gate: {selectedQRBooking.entryGateName || selectedQRBooking.gate || "TBD"}
+                </p>
+              </div>
+
+              <Button
+                onClick={() => {
+                  const qrCanvas = document.querySelector("canvas")
+                  if (qrCanvas) {
+                    const link = document.createElement("a")
+                    link.href = qrCanvas.toDataURL()
+                    link.download = `ticket-${selectedQRBooking.id}.png`
+                    link.click()
+                  }
+                }}
+                className="w-full"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download Ticket
+              </Button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Crowd Alert Popup */}
+      <AnimatePresence>
+        {alertVisible && alertBooking && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+            onClick={() => setAlertVisible(false)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              className="w-full max-w-sm rounded-3xl border-2 border-red-500 bg-gradient-to-b from-red-950 to-slate-900 p-8 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+            >
+              <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 1, repeat: Infinity }}>
+                <AlertTriangle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+              </motion.div>
+              <h2 className="text-2xl font-bold text-red-300 text-center mb-2">HIGH CROWD ALERT</h2>
+              <p className="text-slate-300 text-center mb-4">
+                {alertBooking.eventName} is approaching capacity
+              </p>
+              <p className="text-3xl font-bold text-red-400 text-center mb-6">
+                {alertBooking.crowdPercentage}%
+              </p>
+              <Button
+                onClick={() => setAlertVisible(false)}
+                className="w-full bg-gradient-to-r from-red-600 to-rose-600"
+              >
+                I Understand
+              </Button>
             </motion.div>
           </motion.div>
         )}
