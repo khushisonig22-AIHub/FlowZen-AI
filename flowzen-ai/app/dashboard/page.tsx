@@ -519,6 +519,64 @@ export default function Dashboard() {
           </section>
         )}
 
+        {/* Quick Features */}
+        <section className="mb-10">
+          <h2 className="text-2xl font-semibold text-white mb-6">Premium Features</h2>
+          <div className="grid gap-4 lg:grid-cols-4">
+            {/* Stalls */}
+            <Link href="/stalls" className="group">
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 hover:border-slate-700 transition cursor-pointer h-full">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center">
+                    <span>🍔</span>
+                  </div>
+                  <h3 className="font-bold text-white">Smart Stalls</h3>
+                </div>
+                <p className="text-sm text-slate-400">Find food, water & merch with shortest waits</p>
+              </div>
+            </Link>
+
+            {/* VIP */}
+            <Link href="/vip" className="group">
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 hover:border-slate-700 transition cursor-pointer h-full">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-yellow-500 to-yellow-700 flex items-center justify-center">
+                    <span>👑</span>
+                  </div>
+                  <h3 className="font-bold text-white">VIP Access</h3>
+                </div>
+                <p className="text-sm text-slate-400">Skip queues with priority entry gates</p>
+              </div>
+            </Link>
+
+            {/* Emergency */}
+            <Link href="/emergency" className="group">
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 hover:border-slate-700 transition cursor-pointer h-full">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center">
+                    <span>🆘</span>
+                  </div>
+                  <h3 className="font-bold text-white">Emergency SOS</h3>
+                </div>
+                <p className="text-sm text-slate-400">Quick access to medical & security</p>
+              </div>
+            </Link>
+
+            {/* Admin */}
+            <Link href="/admin" className="group">
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 hover:border-slate-700 transition cursor-pointer h-full">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+                    <span>⚙️</span>
+                  </div>
+                  <h3 className="font-bold text-white">Admin Panel</h3>
+                </div>
+                <p className="text-sm text-slate-400">Control center & SOS management</p>
+              </div>
+            </Link>
+          </div>
+        </section>
+
         {/* Live Bookings */}
         <section className="mt-10">
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
