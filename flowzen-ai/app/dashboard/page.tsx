@@ -105,6 +105,7 @@ export default function Dashboard() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [showNotifications, setShowNotifications] = useState(false)
   const [alertVisible, setAlertVisible] = useState(false)
+  const [alertDismissed, setAlertDismissed] = useState(false)
   const [alertBooking, setAlertBooking] = useState<Booking | null>(null)
   const [selectedQRBooking, setSelectedQRBooking] = useState<Booking | null>(null)
   const [showQRModal, setShowQRModal] = useState(false)
@@ -154,7 +155,7 @@ export default function Dashboard() {
     const highAlert = bookings.find(
       (booking) => booking.crowdPercentage && booking.crowdPercentage >= 80 && booking.status === "confirmed"
     )
-    if (highAlert && !alertVisible) {
+    if (highAlert && !alertVisible && !alertDismissed) {
       setAlertBooking(highAlert)
       setAlertVisible(true)
       addNotification({
@@ -170,7 +171,7 @@ export default function Dashboard() {
         })
       }
     }
-  }, [bookings, alertVisible])
+  }, [bookings, alertVisible, alertDismissed])
 
   const addNotification = (notification: Omit<Notification, "id" | "timestamp" | "read">) => {
     const newNotif: Notification = {
@@ -803,7 +804,10 @@ export default function Dashboard() {
             <p style={{color:'#ff4444', fontSize:'32px', 
             fontWeight:'bold'}}>{alertBooking.crowdPercentage}%</p>
             <button 
-              onClick={() => setAlertVisible(false)}
+              onClick={() => {
+                setAlertDismissed(true)
+                setAlertVisible(false)
+              }}
               style={{background:'#ff0000', color:'white', 
               border:'none', padding:'12px 40px', borderRadius:'8px', 
               fontSize:'16px', cursor:'pointer', marginTop:'16px',
